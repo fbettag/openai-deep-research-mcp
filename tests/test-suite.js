@@ -13,8 +13,9 @@ class MCPTester {
   async startServer() {
     console.log('Starting MCP server...');
     
-    this.serverProcess = spawn('node', ['../dist/server.js'], {
+    this.serverProcess = spawn('node', ['dist/server.js'], {
       stdio: ['pipe', 'pipe', 'pipe'],
+      cwd: process.cwd().includes('tests') ? '..' : '.',
       env: {
         ...process.env,
         OPENAI_API_KEY: process.env.OPENAI_API_KEY || process.env.TEST_OPENAI_API_KEY
