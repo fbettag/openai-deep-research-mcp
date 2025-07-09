@@ -73,7 +73,7 @@ server.registerTool(
   {
     title: "Create OpenAI Deep Research Request",
     description: "Create a new OpenAI Deep Research request. This initiates a comprehensive research task that can take 5-30 minutes to complete. The AI will decompose your query, perform web searches, and synthesize results into a detailed report with citations.",
-    inputSchema: createRequestSchema,
+    inputSchema: createRequestSchema.shape,
   },
   async (inputs) => {
     try {
@@ -162,7 +162,7 @@ server.registerTool(
   {
     title: "Check Research Request Status",
     description: "Check the status of an OpenAI Deep Research request",
-    inputSchema: checkStatusSchema,
+    inputSchema: checkStatusSchema.shape,
   },
   async (inputs) => {
     try {
@@ -222,7 +222,7 @@ server.registerTool(
   {
     title: "Get Research Results",
     description: "Get the results from a completed OpenAI Deep Research request",
-    inputSchema: getResultsSchema,
+    inputSchema: getResultsSchema.shape,
   },
   async (inputs) => {
     try {
