@@ -7,7 +7,7 @@ import OpenAI from "openai";
 function getOpenAIClient() {
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
-        throw new Error("OPENAI_API_KEY environment variable is required");
+        throw new Error("OPENAI_API_KEY environment variable is required. Please set it in your environment or MCP configuration.");
     }
     const timeout = parseInt(process.env.OPENAI_TIMEOUT || "600000", 10);
     return new OpenAI({
@@ -45,7 +45,24 @@ server.registerTool("openai_deep_research_create", {
 }, async (inputs) => {
     try {
         const { query, system_message, model, include_code_interpreter } = inputs;
-        const client = getOpenAIClient();
+        // Initialize OpenAI client (lazy loading)
+        let client;
+        try {
+            client = getOpenAIClient();
+        }
+        catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            return {
+                content: [{
+                        type: "text",
+                        text: JSON.stringify({
+                            error: errorMessage,
+                            status: "configuration_error",
+                            help: "Please ensure OPENAI_API_KEY is set in your environment or MCP configuration"
+                        }, null, 2),
+                    }],
+            };
+        }
         // Build input messages
         const inputMessages = [];
         if (system_message) {
@@ -96,6 +113,7 @@ server.registerTool("openai_deep_research_create", {
                     text: JSON.stringify({
                         error: `Failed to create research request: ${errorMessage}`,
                         status: "failed",
+                        help: "Check your OpenAI API key and network connection"
                     }, null, 2),
                 }],
         };
@@ -109,7 +127,24 @@ server.registerTool("openai_deep_research_check_status", {
 }, async (inputs) => {
     try {
         const { request_id } = inputs;
-        const client = getOpenAIClient();
+        // Initialize OpenAI client (lazy loading)
+        let client;
+        try {
+            client = getOpenAIClient();
+        }
+        catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            return {
+                content: [{
+                        type: "text",
+                        text: JSON.stringify({
+                            error: errorMessage,
+                            status: "configuration_error",
+                            help: "Please ensure OPENAI_API_KEY is set in your environment or MCP configuration"
+                        }, null, 2),
+                    }],
+            };
+        }
         // Retrieve status directly from OpenAI
         const response = await client.responses.retrieve(request_id);
         return {
@@ -132,6 +167,7 @@ server.registerTool("openai_deep_research_check_status", {
                     text: JSON.stringify({
                         error: `Failed to check status: ${errorMessage}`,
                         status: "error",
+                        help: "Check your OpenAI API key and network connection, or verify the request_id is valid"
                     }, null, 2),
                 }],
         };
@@ -145,7 +181,24 @@ server.registerTool("openai_deep_research_get_results", {
 }, async (inputs) => {
     try {
         const { request_id } = inputs;
-        const client = getOpenAIClient();
+        // Initialize OpenAI client (lazy loading)
+        let client;
+        try {
+            client = getOpenAIClient();
+        }
+        catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            return {
+                content: [{
+                        type: "text",
+                        text: JSON.stringify({
+                            error: errorMessage,
+                            status: "configuration_error",
+                            help: "Please ensure OPENAI_API_KEY is set in your environment or MCP configuration"
+                        }, null, 2),
+                    }],
+            };
+        }
         // Retrieve response directly from OpenAI
         const response = await client.responses.retrieve(request_id);
         if (response.status !== "completed") {
@@ -246,6 +299,7 @@ server.registerTool("openai_deep_research_get_results", {
                     text: JSON.stringify({
                         error: `Failed to get results: ${errorMessage}`,
                         status: "error",
+                        help: "Check your OpenAI API key and network connection, or verify the request_id is valid and completed"
                     }, null, 2),
                 }],
         };
@@ -255,26 +309,22 @@ server.registerTool("openai_deep_research_get_results", {
 async function main() {
     const transport = new StdioServerTransport();
     console.error("OpenAI Deep Research MCP Server starting...");
-    try {
-        // Test OpenAI client initialization
-        getOpenAIClient();
-        console.error("OpenAI client initialized successfully");
-    }
-    catch (error) {
-        console.error("Warning: OpenAI client initialization failed:", error);
-        console.error("Make sure OPENAI_API_KEY is set in your environment");
-    }
+    console.error("Note: OpenAI API key will be validated when tools are called");
     await server.connect(transport);
     console.error("Server started and listening for connections");
 }
-// Handle errors
+// Handle errors gracefully
 process.on("unhandledRejection", (reason, promise) => {
     console.error("Unhandled Rejection at:", promise, "reason:", reason);
-    process.exit(1);
+    // Don't exit - let the server continue running
+});
+process.on("uncaughtException", (error) => {
+    console.error("Uncaught Exception:", error);
+    // Don't exit - let the server continue running
 });
 // Run the server
 main().catch((error) => {
-    console.error("Fatal error:", error);
+    console.error("Fatal error starting server:", error);
     process.exit(1);
 });
 //# sourceMappingURL=server.js.map
