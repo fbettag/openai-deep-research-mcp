@@ -11,6 +11,7 @@ interface ResearchRequest {
   systemMessage?: string;
   model: string;
   status: "pending" | "completed" | "failed";
+  openaiResponseId?: string;
   response?: any;
   error?: string;
   createdAt: Date;
@@ -119,14 +120,14 @@ server.registerTool(
         background: true,
       });
       
-      // Store request
+      // Store request with OpenAI response ID
       const request: ResearchRequest = {
         id: requestId,
         query,
         systemMessage: system_message,
         model,
         status: "pending",
-        response,
+        openaiResponseId: response.id,
         createdAt: new Date(),
       };
       researchRequests.set(requestId, request);
@@ -181,12 +182,25 @@ server.registerTool(
         };
       }
       
-      // In a real implementation, you'd check the actual status of the async request
-      // For now, we'll simulate by checking if enough time has passed
-      const elapsedMinutes = (Date.now() - request.createdAt.getTime()) / 1000 / 60;
-      if (elapsedMinutes > 5 && request.status === "pending") {
-        request.status = "completed";
+      // Check the actual status from OpenAI
+      if (request.openaiResponseId && request.status === "pending") {
+        try {
+          const client = getOpenAIClient();
+          const response = await client.responses.retrieve(request.openaiResponseId);
+          
+          if (response.status === "completed") {
+            request.status = "completed";
+            request.response = response;
+          } else if (response.status === "failed") {
+            request.status = "failed";
+            request.error = "Research request failed";
+          }
+        } catch (error) {
+          console.error("Error checking status:", error);
+        }
       }
+      
+      const elapsedMinutes = (Date.now() - request.createdAt.getTime()) / 1000 / 60;
       
       return {
         content: [{
@@ -253,8 +267,29 @@ server.registerTool(
         };
       }
       
-      const response = request.response;
-      if (!response?.output) {
+      let response = request.response;
+      
+      // For background requests, we need to retrieve the completed response
+      if (request.openaiResponseId && (!response || !response.output)) {
+        try {
+          const client = getOpenAIClient();
+          const fullResponse = await client.responses.retrieve(request.openaiResponseId);
+          request.response = fullResponse;
+          response = fullResponse;
+        } catch (error) {
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                error: `Failed to retrieve results: ${error instanceof Error ? error.message : String(error)}`,
+                status: "error",
+              }, null, 2),
+            }],
+          };
+        }
+      }
+      
+      if (!response) {
         return {
           content: [{
             type: "text",
@@ -266,14 +301,52 @@ server.registerTool(
         };
       }
       
-      // Extract main content
-      const mainContent = response.output[response.output.length - 1]?.content?.[0];
+      // Extract output array
+      const output = response.output;
+      if (!output || !Array.isArray(output) || output.length === 0) {
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              error: "No output available in response",
+              status: "error",
+              debug: {
+                hasResponse: !!response,
+                hasOutput: !!output,
+                outputType: typeof output,
+                outputLength: Array.isArray(output) ? output.length : 'not array',
+              },
+            }, null, 2),
+          }],
+        };
+      }
+      
+      // Get the last message from output array (should be the assistant's response)
+      const lastMessage = output[output.length - 1];
+      if (!lastMessage || !lastMessage.content || !Array.isArray(lastMessage.content)) {
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              error: "Unable to extract content from last message",
+              status: "error",
+              debug: {
+                lastMessageKeys: lastMessage ? Object.keys(lastMessage) : 'no last message',
+                hasContent: !!(lastMessage && lastMessage.content),
+              },
+            }, null, 2),
+          }],
+        };
+      }
+      
+      // Get the main content (first content item)
+      const mainContent = lastMessage.content[0];
       if (!mainContent) {
         return {
           content: [{
             type: "text",
             text: JSON.stringify({
-              error: "Unable to extract results from response",
+              error: "No content in last message",
               status: "error",
             }, null, 2),
           }],
