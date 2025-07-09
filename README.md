@@ -14,7 +14,15 @@ A TypeScript MCP (Model Context Protocol) server that provides access to OpenAI'
 npx github:fbettag/openai-deep-research-mcp
 ```
 
-## Claude Desktop Setup
+## Quick Setup with Claude CLI
+
+```bash
+claude mcp add openai-deep-research -s user npx github:fbettag/openai-deep-research-mcp -e OPENAI_API_KEY=sk-your-openai-api-key-here
+```
+
+Replace `sk-your-openai-api-key-here` with your actual OpenAI API key.
+
+## Claude Desktop Setup (Manual)
 
 Add to your Claude Desktop configuration:
 
