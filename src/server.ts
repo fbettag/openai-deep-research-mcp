@@ -5,27 +5,12 @@ import { z } from "zod";
 import OpenAI from "openai";
 
 // Types and interfaces
-interface ResearchRequest {
-  id: string;
-  query: string;
-  systemMessage?: string;
-  model: string;
-  status: "pending" | "completed" | "failed";
-  openaiResponseId?: string;
-  response?: any;
-  error?: string;
-  createdAt: Date;
-}
-
 interface Citation {
   id: number;
   title: string;
   url?: string;
   snippet?: string;
 }
-
-// Global storage for research requests (in production, use a proper database)
-const researchRequests = new Map<string, ResearchRequest>();
 
 // Initialize OpenAI client
 function getOpenAIClient(): OpenAI {
@@ -61,11 +46,11 @@ const createRequestSchema = z.object({
 });
 
 const checkStatusSchema = z.object({
-  request_id: z.string().min(1).describe("The ID of the research request to check"),
+  request_id: z.string().min(1).describe("The OpenAI response ID to check (starts with 'resp_')"),
 });
 
 const getResultsSchema = z.object({
-  request_id: z.string().min(1).describe("The ID of the research request"),
+  request_id: z.string().min(1).describe("The OpenAI response ID (starts with 'resp_')"),
 });
 
 // Tool: Create Research Request
@@ -81,8 +66,6 @@ server.registerTool(
       const { query, system_message, model, include_code_interpreter } = inputs;
       const client = getOpenAIClient();
       
-      // Generate request ID
-      const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
       
       // Build input messages
       const inputMessages: any[] = [];
@@ -120,24 +103,13 @@ server.registerTool(
         background: true,
       });
       
-      // Store request with OpenAI response ID
-      const request: ResearchRequest = {
-        id: requestId,
-        query,
-        systemMessage: system_message,
-        model,
-        status: "pending",
-        openaiResponseId: response.id,
-        createdAt: new Date(),
-      };
-      researchRequests.set(requestId, request);
       
       return {
         content: [{
           type: "text",
           text: JSON.stringify({
-            request_id: requestId,
-            status: "pending",
+            request_id: response.id,
+            status: response.status,
             message: "Research request created successfully",
           }, null, 2),
         }],
@@ -168,50 +140,19 @@ server.registerTool(
   async (inputs) => {
     try {
       const { request_id } = inputs;
+      const client = getOpenAIClient();
       
-      const request = researchRequests.get(request_id);
-      if (!request) {
-        return {
-          content: [{
-            type: "text",
-            text: JSON.stringify({
-              error: `Request ID ${request_id} not found`,
-              status: "not_found",
-            }, null, 2),
-          }],
-        };
-      }
-      
-      // Check the actual status from OpenAI
-      if (request.openaiResponseId && request.status === "pending") {
-        try {
-          const client = getOpenAIClient();
-          const response = await client.responses.retrieve(request.openaiResponseId);
-          
-          if (response.status === "completed") {
-            request.status = "completed";
-            request.response = response;
-          } else if (response.status === "failed") {
-            request.status = "failed";
-            request.error = "Research request failed";
-          }
-        } catch (error) {
-          console.error("Error checking status:", error);
-        }
-      }
-      
-      const elapsedMinutes = (Date.now() - request.createdAt.getTime()) / 1000 / 60;
+      // Retrieve status directly from OpenAI
+      const response = await client.responses.retrieve(request_id);
       
       return {
         content: [{
           type: "text",
           text: JSON.stringify({
-            request_id: request.id,
-            status: request.status,
-            query: request.query,
-            model: request.model,
-            created_at: request.createdAt.toISOString(),
-            elapsed_minutes: Math.round(elapsedMinutes),
+            request_id: response.id,
+            status: response.status,
+            model: response.model,
+            created_at: new Date(response.created_at * 1000).toISOString(),
           }, null, 2),
         }],
       };
@@ -241,61 +182,18 @@ server.registerTool(
   async (inputs) => {
     try {
       const { request_id } = inputs;
+      const client = getOpenAIClient();
       
-      const request = researchRequests.get(request_id);
-      if (!request) {
+      // Retrieve response directly from OpenAI
+      const response = await client.responses.retrieve(request_id);
+      
+      if (response.status !== "completed") {
         return {
           content: [{
             type: "text",
             text: JSON.stringify({
-              error: `Request ID ${request_id} not found`,
-              status: "not_found",
-            }, null, 2),
-          }],
-        };
-      }
-      
-      if (request.status !== "completed") {
-        return {
-          content: [{
-            type: "text",
-            text: JSON.stringify({
-              error: `Request ${request_id} is not completed. Status: ${request.status}`,
-              status: request.status,
-            }, null, 2),
-          }],
-        };
-      }
-      
-      let response = request.response;
-      
-      // For background requests, we need to retrieve the completed response
-      if (request.openaiResponseId && (!response || !response.output)) {
-        try {
-          const client = getOpenAIClient();
-          const fullResponse = await client.responses.retrieve(request.openaiResponseId);
-          request.response = fullResponse;
-          response = fullResponse;
-        } catch (error) {
-          return {
-            content: [{
-              type: "text",
-              text: JSON.stringify({
-                error: `Failed to retrieve results: ${error instanceof Error ? error.message : String(error)}`,
-                status: "error",
-              }, null, 2),
-            }],
-          };
-        }
-      }
-      
-      if (!response) {
-        return {
-          content: [{
-            type: "text",
-            text: JSON.stringify({
-              error: "No results available",
-              status: "error",
+              error: `Request ${request_id} is not completed. Status: ${response.status}`,
+              status: response.status,
             }, null, 2),
           }],
         };
@@ -322,7 +220,7 @@ server.registerTool(
       }
       
       // Get the last message from output array (should be the assistant's response)
-      const lastMessage = output[output.length - 1];
+      const lastMessage = output[output.length - 1] as any;
       if (!lastMessage || !lastMessage.content || !Array.isArray(lastMessage.content)) {
         return {
           content: [{
@@ -340,7 +238,7 @@ server.registerTool(
       }
       
       // Get the main content (first content item)
-      const mainContent = lastMessage.content[0];
+      const mainContent = lastMessage.content[0] as any;
       if (!mainContent) {
         return {
           content: [{
@@ -373,10 +271,9 @@ server.registerTool(
         content: [{
           type: "text",
           text: JSON.stringify({
-            request_id: request.id,
+            request_id: response.id,
             status: "completed",
-            query: request.query,
-            model: request.model,
+            model: response.model,
             results: {
               report: reportText,
               citations,

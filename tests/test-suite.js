@@ -159,8 +159,12 @@ class MCPTester {
           throw new Error('No request_id in response');
         }
         
-        if (content.status !== 'pending') {
-          throw new Error(`Expected status 'pending', got '${content.status}'`);
+        if (!content.request_id.startsWith('resp_')) {
+          throw new Error(`Expected OpenAI response ID (starts with 'resp_'), got '${content.request_id}'`);
+        }
+        
+        if (!['queued', 'pending', 'in_progress'].includes(content.status)) {
+          throw new Error(`Expected initial status 'queued', 'pending', or 'in_progress', got '${content.status}'`);
         }
         
         requestId = content.request_id;
@@ -185,7 +189,7 @@ class MCPTester {
           throw new Error('Request ID mismatch');
         }
         
-        if (!['pending', 'completed', 'failed'].includes(content.status)) {
+        if (!['queued', 'pending', 'in_progress', 'completed', 'failed'].includes(content.status)) {
           throw new Error(`Invalid status: ${content.status}`);
         }
         
