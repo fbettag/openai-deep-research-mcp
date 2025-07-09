@@ -308,23 +308,26 @@ server.registerTool("openai_deep_research_get_results", {
 // Start the server
 async function main() {
     const transport = new StdioServerTransport();
-    console.error("OpenAI Deep Research MCP Server starting...");
-    console.error("Note: OpenAI API key will be validated when tools are called");
     await server.connect(transport);
-    console.error("Server started and listening for connections");
 }
+// Handle process signals for graceful shutdown
+process.on("SIGINT", () => {
+    process.exit(0);
+});
+process.on("SIGTERM", () => {
+    process.exit(0);
+});
 // Handle errors gracefully
+// We don't exit on these errors to maintain server availability
 process.on("unhandledRejection", (reason, promise) => {
     console.error("Unhandled Rejection at:", promise, "reason:", reason);
-    // Don't exit - let the server continue running
 });
 process.on("uncaughtException", (error) => {
     console.error("Uncaught Exception:", error);
-    // Don't exit - let the server continue running
 });
 // Run the server
 main().catch((error) => {
-    console.error("Fatal error starting server:", error);
+    console.error("Server error:", error);
     process.exit(1);
 });
 //# sourceMappingURL=server.js.map
